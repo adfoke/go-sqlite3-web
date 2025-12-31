@@ -1,0 +1,208 @@
+  <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Lite Auth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 简单的淡入动画 */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center font-sans antialiased">
+
+    <auth-widget></auth-widget>
+
+    <script>
+        class AuthWidget extends HTMLElement {
+            constructor() {
+                super();
+                this.user = null;      // 存储用户信息
+                this.mode = 'login';   // 当前模式: 'login' | 'register'
+            }
+
+            // 组件挂载时自动执行
+            async connectedCallback() {
+                this.innerHTML = `<div class="text-gray-500 animate-pulse">正在加载用户状态...</div>`;
+                await this.checkLogin();
+                this.render();
+            }
+
+            // 检查后端 Session (Cookie)
+            async checkLogin() {
+                try {
+                    const res = await fetch('/api/me');
+                    if (res.ok) {
+                        this.user = await res.json();
+                    }
+                } catch (e) {
+                    console.log("未登录或网络错误");
+                }
+            }
+
+            // 核心渲染入口
+            render() {
+                this.innerHTML = ''; // 清空当前内容
+                const container = document.createElement('div');
+                container.className = "fade-in bg-white p-8 rounded-2xl shadow-xl w-full max-w-md mx-4";
+
+                if (this.user) {
+                    container.innerHTML = this.getProfileHTML();
+                    this.appendChild(container);
+                    this.querySelector('#btn-logout').addEventListener('click', () => this.handleLogout());
+                } else {
+                    container.innerHTML = this.getFormHTML();
+                    this.appendChild(container);
+                    this.bindFormEvents();
+                }
+            }
+
+            // 模板：个人中心
+            getProfileHTML() {
+                return `
+                    <div class="text-center">
+                        <div class="w-24 h-24 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full mx-auto flex items-center justify-center mb-6 text-4xl text-white shadow-lg">
+                            ${this.user.username.charAt(0).toUpperCase()}
+                        </div>
+                        <h2 class="text-2xl font-bold text-slate-800 mb-2">
+                            你好, ${this.escapeHtml(this.user.username)}
+                        </h2>
+                        <p class="text-slate-400 text-sm mb-8">User ID: ${this.user.id}</p>
+                        
+                        <a href="/users" class="block w-full py-3 px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-semibold transition-all duration-200 mb-4">
+                            用户管理
+                        </a>
+
+                        <button id="btn-logout" class="w-full py-3 px-4 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 font-semibold transition-all duration-200 flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                            退出登录
+                        </button>
+                    </div>
+                `;
+            }
+
+            // 模板：登录/注册表单
+            getFormHTML() {
+                const isLogin = this.mode === 'login';
+                return `
+                    <div>
+                        <h2 class="text-3xl font-bold text-slate-800 mb-2 text-center">
+                            ${isLogin ? '欢迎回来' : '创建账户'}
+                        </h2>
+                        <p class="text-center text-slate-400 mb-8 text-sm">
+                            ${isLogin ? '请输入您的账号密码进行登录' : '注册一个新的账号开始体验'}
+                        </p>
+                        
+                        <form id="auth-form" class="space-y-5">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1 ml-1">用户名</label>
+                                <input type="text" name="username" required placeholder="请输入用户名"
+                                    class="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1 ml-1">密码</label>
+                                <input type="password" name="password" required placeholder="••••••••"
+                                    class="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400">
+                            </div>
+                            
+                            <div id="error-msg" class="p-3 bg-red-50 text-red-600 text-sm rounded-lg text-center hidden border border-red-100"></div>
+
+                            <button type="submit" class="w-full py-3 px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-semibold transition-all duration-200 shadow-lg shadow-blue-500/30">
+                                ${isLogin ? '立即登录' : '立即注册'}
+                            </button>
+                        </form>
+
+                        <div class="mt-8 text-center text-sm text-slate-500">
+                            ${isLogin ? '还没有账号？' : '已有账号？'}
+                            <a href="#" id="toggle-mode" class="text-blue-600 hover:text-blue-700 font-semibold ml-1">
+                                ${isLogin ? '去注册' : '去登录'}
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 绑定表单事件
+            bindFormEvents() {
+                // 切换 注册/登录 模式
+                this.querySelector('#toggle-mode').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.mode = this.mode === 'login' ? 'register' : 'login';
+                    this.render();
+                });
+
+                // 提交表单
+                this.querySelector('#auth-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = e.target.querySelector('button');
+                    const originalText = btn.innerText;
+                    
+                    // Loading 状态
+                    btn.disabled = true;
+                    btn.innerHTML = `<svg class="animate-spin h-5 w-5 text-white mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+
+                    const formData = new FormData(e.target);
+                    const data = Object.fromEntries(formData.entries());
+                    const endpoint = this.mode === 'login' ? '/api/login' : '/api/register';
+
+                    try {
+                        const res = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(data)
+                        });
+                        
+                        const result = await res.json();
+
+                        if (!res.ok) {
+                            throw new Error(result.error || '请求失败');
+                        }
+
+                        if (this.mode === 'register') {
+                            alert('注册成功，请登录');
+                            this.mode = 'login';
+                            this.render();
+                        } else {
+                            // 登录成功
+                            this.user = result.user;
+                            this.render();
+                        }
+                    } catch (err) {
+                        const errEl = this.querySelector('#error-msg');
+                        errEl.textContent = err.message;
+                        errEl.classList.remove('hidden');
+                        
+                        // 恢复按钮
+                        btn.disabled = false;
+                        btn.innerText = originalText;
+                    }
+                });
+            }
+
+            // 处理退出
+            async handleLogout() {
+                await fetch('/api/logout', { method: 'POST' });
+                this.user = null;
+                this.mode = 'login';
+                this.render();
+            }
+
+            // 安全转义 HTML 防止 XSS
+            escapeHtml(text) {
+                if (!text) return text;
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+        }
+
+        // 注册 Web Component
+        customElements.define('auth-widget', AuthWidget);
+    </script>
+</body>
+</html>
